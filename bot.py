@@ -156,11 +156,165 @@ async def dmrole(ctx, role: discord.Role, *, message: str):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ Admins only.")
+        await ctx.send("❌ Tumhare paas is command ki permission nahi hai.")
     elif isinstance(error, (commands.MissingRequiredArgument, commands.BadArgument)):
         await ctx.send(f"❌ Wrong usage of `r.{ctx.command}`.")
     elif not isinstance(error, commands.CommandNotFound):
         raise error
+
+
+# ---- MODERATION ----
+from datetime import timedelta
+
+
+def parse_duration(text):
+    units = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+    try:
+        return int(text[:-1]) * units[text[-1].lower()]
+    except (ValueError, KeyError, IndexError):
+        return None
+
+
+def can_act(ctx, member):
+    if member == ctx.author or member == ctx.guild.owner or member == ctx.guild.me:
+        return False
+    if ctx.author != ctx.guild.owner and member.top_role >= ctx.author.top_role:
+        return False
+    return member.top_role < ctx.guild.me.top_role
+
+
+NO_ACT = "❌ Is member par action nahi ho sakta (role upar hai ya khud/owner)."
+NO_BOT_PERM = "❌ Bot ke paas permission nahi hai (bot ka role upar rakho)."
+
+
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def purge(ctx, amount: int):
+    if not 1 <= amount <= 500:
+        return await ctx.send("❌ Amount 1 se 500 ke beech do.")
+    try:
+        deleted = await ctx.channel.purge(limit=amount + 1)
+        await ctx.send(f"🧹 {len(deleted) - 1} messages delete kiye.", delete_after=4)
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: discord.Member, *, reason: str = "No reason"):
+    if not can_act(ctx, member):
+        return await ctx.send(NO_ACT)
+    try:
+        await member.kick(reason=f"{ctx.author}: {reason}")
+        await ctx.send(f"👢 {member} ko kick kiya. Reason: {reason}")
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: discord.Member, *, reason: str = "No reason"):
+    if not can_act(ctx, member):
+        return await ctx.send(NO_ACT)
+    try:
+        await member.ban(reason=f"{ctx.author}: {reason}")
+        await ctx.send(f"🔨 {member} ko ban kiya. Reason: {reason}")
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def unban(ctx, user_id: int):
+    try:
+        await ctx.guild.unban(discord.Object(id=user_id))
+        await ctx.send(f"✅ User `{user_id}` unban ho gaya.")
+    except discord.NotFound:
+        await ctx.send("❌ Ye user banned nahi hai.")
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(moderate_members=True)
+async def mute(ctx, member: discord.Member, duration: str, *, reason: str = "No reason"):
+    secs = parse_duration(duration)
+    if secs is None or not 1 <= secs <= 28 * 86400:
+        return await ctx.send("❌ Time aise do: 30s, 10m, 2h, 1d (max 28d).")
+    if not can_act(ctx, member):
+        return await ctx.send(NO_ACT)
+    try:
+        await member.timeout(timedelta(seconds=secs), reason=f"{ctx.author}: {reason}")
+        await ctx.send(f"🔇 {member} ko {duration} ke liye mute kiya. Reason: {reason}")
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(moderate_members=True)
+async def unmute(ctx, member: discord.Member):
+    try:
+        await member.timeout(None)
+        await ctx.send(f"🔊 {member} unmute ho gaya.")
+    except discord.Forbidden:
+        await ctx.send(NO_BOT_PERM)
+
+
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def lock(ctx):
+    ow = ctx.channel.overwrites_for(ctx.guild.default_role)
+    ow.send_messages = False
+    await ctx.channel.set_permissions(ctx.guild.default_role, overwrite=ow)
+    await ctx.send("🔒 Channel lock ho gaya.")
+
+
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def unlock(ctx):
+    ow = ctx.channel.overwrites_for(ctx.guild.default_role)
+    ow.send_messages = None
+    await ctx.channel.set_permissions(ctx.guild.default_role, overwrite=ow)
+    await ctx.send("🔓 Channel unlock ho gaya.")
+
+
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def slowmode(ctx, seconds: int):
+    if not 0 <= seconds <= 21600:
+        return await ctx.send("❌ 0 se 21600 seconds ke beech do.")
+    await ctx.channel.edit(slowmode_delay=seconds)
+    await ctx.send(f"🐢 Slowmode: {seconds}s" if seconds else "✅ Slowmode off.")
+
+
+@bot.command(name="help")
+async def help_cmd(ctx):
+    await ctx.send(
+        "**Commands (prefix: r.)**\n"
+        "`r.purge <n>` `r.kick @u [reason]` `r.ban @u [reason]` `r.unban <id>`\n"
+        "`r.mute @u <10m> [reason]` `r.unmute @u` `r.lock` `r.unlock` `r.slowmode <s>`\n"
+        "`r.dm @u <msg>` `r.dmall <msg>` `r.dmrole @role <msg>` `r.setup`\n"
+        "Slash: `/ping`"
+    )
+
+
+@bot.tree.command(name="ping", description="Bot ki latency check karo")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message(f"🏓 Pong! {round(bot.latency * 1000)}ms")
+
+
+_synced = False
+
+
+async def sync_slash():
+    global _synced
+    if not _synced:
+        await bot.tree.sync()
+        _synced = True
+
+
+bot.add_listener(sync_slash, "on_ready")
+# ---- END MODERATION ----
 
 
 bot.run(TOKEN)
