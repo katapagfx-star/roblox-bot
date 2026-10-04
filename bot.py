@@ -55,6 +55,11 @@ async def update_stats(guild, create_if_missing=False):
     cid = cfg.get(str(guild.id))
     if cid:
         channel = guild.get_channel(cid)
+    if channel is None:
+        for vc in guild.voice_channels:
+            if vc.name.startswith("🪔 Members:"):
+                channel = vc
+                break
 
     name = f"🪔 Members: {guild.member_count}"
 
