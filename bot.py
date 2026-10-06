@@ -36,6 +36,16 @@ async def rotate_status():
 
 
 # ---------- config ----------
+def make_embed(message, ctx, title):
+    embed = discord.Embed(
+        title=title,
+        description=message[:4000],
+        color=0xFF0000,
+    )
+    embed.set_footer(text=f"From {ctx.guild.name}")
+    return embed
+
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
@@ -114,7 +124,7 @@ async def setup(ctx):
 @commands.has_permissions(administrator=True)
 async def dm(ctx, user: discord.Member, *, message: str):
     try:
-        await user.send(message)
+        await user.send(embed=make_embed(message, ctx, "📩 Message"))
         await ctx.send(f"✅ DM sent to {user}.")
     except discord.Forbidden:
         await ctx.send(f"❌ {user} has DMs closed.")
@@ -129,7 +139,7 @@ async def dmall(ctx, *, message: str):
         if m.bot:
             continue
         try:
-            await m.send(message)
+            await m.send(embed=make_embed(message, ctx, "📢 Announcement"))
             sent += 1
         except (discord.Forbidden, discord.HTTPException):
             failed += 1
@@ -145,7 +155,7 @@ async def dmrole(ctx, role: discord.Role, *, message: str):
         if m.bot:
             continue
         try:
-            await m.send(message)
+            await m.send(embed=make_embed(message, ctx, "📢 Announcement"))
             sent += 1
         except (discord.Forbidden, discord.HTTPException):
             failed += 1
