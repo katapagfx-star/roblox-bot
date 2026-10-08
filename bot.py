@@ -46,12 +46,6 @@ def make_embed(message, ctx, title):
     return embed
 
 
-def make_embed(message, ctx, title):
-    embed = discord.Embed(title=title, description=message[:4000], color=0xFF0000)
-    embed.set_footer(text=f"From {ctx.guild.name}")
-    return embed
-
-
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
@@ -325,7 +319,9 @@ _synced = False
 async def sync_slash():
     global _synced
     if not _synced:
-        await bot.tree.sync()
+        for g in bot.guilds:
+            bot.tree.copy_global_to(guild=g)
+            await bot.tree.sync(guild=g)
         _synced = True
 
 
